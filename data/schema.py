@@ -47,3 +47,6 @@ for f in fields(EmployeeFeatures):
         "datetime" if f.type == datetime.datetime else
         str(f.type)
     )
+
+# For backward compatibility, expose the schema at module level
+EMPLOYEE_SCHEMA = EmployeeFeatures.EMPLOYEE_SCHEMA
