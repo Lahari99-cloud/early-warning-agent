@@ -1,0 +1,8 @@
+# Requirements for Attrition Early-Warning Agent
+pandas
+xgboost
+shap
+faker
+anthropic
+streamlit
+pytest
