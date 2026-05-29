@@ -21,7 +21,7 @@ class EmployeeFeatures:
     last_promotion_date: datetime.datetime
     years_at_company: float
     manager_id: int
-    attrition_risk: float  # target variable (0 to 1)
+    attrition_risk: float  # target variable (0 to 1, used as binary 0/1 in labeling)
     # Additional features as per instructions
     level: str
     comp_vs_band_pct: float
@@ -34,23 +34,16 @@ class EmployeeFeatures:
     survey_blurb: str
 
     # Class variable for schema backward compatibility
-    EMPLOYEE_SCHEMA: ClassVar[Dict[str, str]] = None
-
-    def __post_init__(self):
-        # Initialize EMPLOYEE_SCHEMA if not already set
-        if EmployeeFeatures.EMPLOYEE_SCHEMA is None:
-            EmployeeFeatures.EMPLOYEE_SCHEMA = {
-                f.name: (
-                    "int" if f.type == int else
-                    "float" if f.type == float else
-                    "string" if f.type == str else
-                    "datetime" if f.type == datetime.datetime else
-                    str(f.type)
-                )
-                for f in fields(self)
-            }
+    EMPLOYEE_SCHEMA: ClassVar[Dict[str, str]] = {}
 
 
-# For backward compatibility, create the schema dictionary
-# This will be populated when the first EmployeeFeatures instance is created
-EMPLOYEE_SCHEMA: Dict[str, str] = {}
+# Initialize the schema dictionary based on the dataclass fields
+# This ensures EMPLOYEE_SCHEMA is always available without needing an instance
+for f in fields(EmployeeFeatures):
+    EmployeeFeatures.EMPLOYEE_SCHEMA[f.name] = (
+        "int" if f.type == int else
+        "float" if f.type == float else
+        "string" if f.type == str else
+        "datetime" if f.type == datetime.datetime else
+        str(f.type)
+    )

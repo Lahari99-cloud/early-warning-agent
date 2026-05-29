@@ -64,6 +64,9 @@ def test_generate_synthetic_data():
     attrition_rate = df['attrition_risk'].mean()
     assert 0.08 <= attrition_rate <= 0.16  # Allow some variance from 12%
 
+    # Check that no employee is their own manager
+    assert (df['employee_id'] != df['manager_id']).all(), "Found employee who is their own manager"
+
 
 def test_save_and_load_parquet():
     """Test that saving and loading parquet works correctly."""
@@ -127,3 +130,40 @@ def test_signal_correlation():
     non_attrition_risk_score = risk_score[df['attrition_risk'] == 0]
     assert attrition_risk_score.mean() > non_attrition_risk_score.mean(), \
         "Attrition group should have higher combined risk score on average"
+
+
+def test_reproducibility():
+    """Test that seeding produces reproducible results."""
+    # Generate two datasets with same seed
+    df1 = generate_synthetic_data(100)
+    df2 = generate_synthetic_data(100)
+
+    # They should be identical
+    pd.testing.assert_frame_equal(df1, df2)
+
+
+def test_save_creates_directory():
+    """Test that save_data_to_parquet creates directory if it doesn't exist."""
+    df = generate_synthetic_data(10)
+
+    # Use a path in a non-existent directory
+    test_dir = "test_nonexistent_dir"
+    test_path = os.path.join(test_dir, "test.parquet")
+
+    try:
+        # This should create the directory
+        save_data_to_parquet(df, test_path)
+
+        # Check that directory and file were created
+        assert os.path.exists(test_dir)
+        assert os.path.exists(test_path)
+
+        # Verify we can load the data back
+        df_loaded = load_data_from_parquet(test_path)
+        pd.testing.assert_frame_equal(df, df_loaded)
+    finally:
+        # Clean up
+        if os.path.exists(test_path):
+            os.unlink(test_path)
+        if os.path.exists(test_dir):
+            os.rmdir(test_dir)

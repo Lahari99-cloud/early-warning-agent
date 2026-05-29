@@ -10,8 +10,6 @@ import os
 
 # Seed for reproducibility
 SEED = 42
-Faker.seed(SEED)
-np.random.seed(SEED)
 
 # Reference date for "today" (from CLAUDE.md currentDate)
 TODAY = pd.Timestamp('2026-05-29')
@@ -26,7 +24,11 @@ def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
     Returns:
         DataFrame with synthetic employee data.
     """
+    # Create and seed Faker instance for this call to ensure reproducibility
     fake = Faker()
+    Faker.seed(SEED)
+    fake.seed_instance(SEED)
+    np.random.seed(SEED)
 
     # Generate base features
     employee_ids = np.arange(n_employees)
@@ -87,9 +89,12 @@ def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
             months_since_promo[i] = 0
 
     # Last promotion date derived from hire date and months since promo
-    # Convert months to days (approximate: 1 month = 30 days)
-    days_since_promo = months_since_promo * 30
-    last_promotion_date = hire_date + pd.to_timedelta(days_since_promo, unit='D')
+    # Use proper date offset for months
+    last_promotion_date = []
+    for i in range(n_employees):
+        promo_date = hire_date[i] + pd.DateOffset(months=int(max_months[i] - months_since_promo[i]))
+        last_promotion_date.append(promo_date)
+    last_promotion_date = pd.Series(last_promotion_date)
 
     # Performance trend: -1 (declining) to +1 (improving)
     perf_trend = np.random.uniform(-1, 1, n_employees)
@@ -100,8 +105,12 @@ def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
     # PTO usage percentage (0-100%)
     pto_usage = np.random.uniform(0, 100, n_employees)
 
-    # Manager ID (random assignment, allowing self-manager for simplicity)
-    manager_id = np.random.choice(employee_ids, n_employees)
+    # Manager ID (ensure no self-management)
+    manager_id = np.zeros(n_employees, dtype=int)
+    for i in range(n_employees):
+        # Choose a random manager that is not the employee themselves
+        possible_managers = np.setdiff1d(employee_ids, [employee_ids[i]])
+        manager_id[i] = np.random.choice(possible_managers)
 
     # One-on-one frequency (meetings per month, 0-4)
     one_on_one_freq = np.random.uniform(0, 4, n_employees)
