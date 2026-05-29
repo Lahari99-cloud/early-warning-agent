@@ -93,3 +93,37 @@ def test_generate_synthetic_data_default_size():
     """Test that default size is 1500 employees as specified."""
     df = generate_synthetic_data()
     assert df.shape[0] == 1500
+
+
+def test_signal_correlation():
+    """Test that attrition label correlates with risk factors as intended."""
+    # Generate a larger dataset to reduce randomness
+    df = generate_synthetic_data(1000)
+
+    # Calculate the risk components as used in the generation
+    # Note: We replicate the logic from generate_synthetic_data to compute risk scores
+    comp_risk = (130 - df['comp_vs_band_pct']) / (130 - 70)  # 0 when comp=130, 1 when comp=70
+    perf_risk = (df['perf_trend'] + 1) / 2  # 0 when perf_trend=-1, 1 when perf_trend=+1
+    max_months = df['years_at_company'] * 12
+    time_risk = df['months_since_promo'] / np.maximum(max_months, 1)  # proportion of tenure since promo
+
+    # Combined risk score (same weights as in generation)
+    risk_score = (0.4 * comp_risk + 0.3 * perf_risk + 0.3 * time_risk)
+
+    # Compare attrition risk group vs non-attrition risk group
+    attrition_group = df[df['attrition_risk'] == 1]
+    non_attrition_group = df[df['attrition_risk'] == 0]
+
+    # The attrition group should have higher average risk score
+    assert attrition_group['comp_vs_band_pct'].mean() < non_attrition_group['comp_vs_band_pct'].mean(), \
+        "Attrition group should have lower comp_vs_band_pct on average"
+    assert attrition_group['perf_trend'].mean() > non_attrition_group['perf_trend'].mean(), \
+        "Attrition group should have higher perf_trend on average"
+    assert attrition_group['months_since_promo'].mean() > non_attrition_group['months_since_promo'].mean(), \
+        "Attrition group should have higher months_since_promo on average"
+
+    # Also check that the risk score is higher for attrition group
+    attrition_risk_score = risk_score[df['attrition_risk'] == 1]
+    non_attrition_risk_score = risk_score[df['attrition_risk'] == 0]
+    assert attrition_risk_score.mean() > non_attrition_risk_score.mean(), \
+        "Attrition group should have higher combined risk score on average"
