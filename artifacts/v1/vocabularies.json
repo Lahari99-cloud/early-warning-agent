@@ -1,0 +1,38 @@
+{
+  "department": [
+    "Engineering",
+    "Finance",
+    "HR",
+    "Marketing",
+    "Sales"
+  ],
+  "job_title": [
+    "Director of Marketing",
+    "Engineering Manager",
+    "Finance Director",
+    "Finance Manager",
+    "Financial Analyst",
+    "HR Coordinator",
+    "HR Director",
+    "HR Generalist",
+    "HR Manager",
+    "Marketing Manager",
+    "Marketing Specialist",
+    "Regional Sales Director",
+    "Sales Manager",
+    "Sales Rep",
+    "Senior Engineer",
+    "Senior Financial Analyst",
+    "Senior Sales Rep",
+    "Software Engineer",
+    "Tech Lead",
+    "VP Marketing"
+  ],
+  "level": [
+    "L1",
+    "L2",
+    "L3",
+    "L4",
+    "L5"
+  ]
+}

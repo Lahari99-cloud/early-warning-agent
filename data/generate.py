@@ -14,6 +14,11 @@ SEED = 42
 # Reference date for "today" (from CLAUDE.md currentDate)
 TODAY = pd.Timestamp('2026-05-29')
 
+TEXT_COLUMNS = [
+    'first_name', 'last_name', 'department', 'job_title', 'level',
+    'exit_note', 'survey_blurb'
+]
+
 def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
     """
     Generate synthetic employee data for attrition modeling.
@@ -125,12 +130,18 @@ def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
     perf_risk = (perf_trend + 1) / 2  # 0 when perf_trend=-1, 1 when perf_trend=+1
     time_risk = months_since_promo / np.maximum(max_months, 1)  # proportion of tenure since promo
 
-    # Combine risks with weights
+    # Combine risks with weights, then add noise so labels are not deterministic.
     risk_score = (0.4 * comp_risk + 0.3 * perf_risk + 0.3 * time_risk)
+    risk_score += np.random.normal(0, 0.1, n_employees)
+    risk_score = np.clip(risk_score, 0, 1)
 
-    # Determine threshold for ~12% positive rate
-    threshold = np.percentile(risk_score, 88)  # top 12% are attrition risk
-    attrition_risk = (risk_score >= threshold).astype(int)  # binary label
+    # Calibrate the stochastic probability to preserve the demo's ~12% base rate.
+    target_attrition_rate = 0.12
+    mean_risk = risk_score.mean()
+    if mean_risk > 0:
+        risk_score = np.clip(risk_score * (target_attrition_rate / mean_risk), 0, 1)
+
+    attrition_risk = (np.random.rand(n_employees) < risk_score).astype(int)
 
     # Generate exit note and survey blurb for all employees
     exit_notes = [fake.sentence(nb_words=6) if attrition_risk[i] == 1 else ""
@@ -162,6 +173,8 @@ def generate_synthetic_data(n_employees: int = 1500) -> pd.DataFrame:
         'survey_blurb': survey_blurbs
     })
 
+    df[TEXT_COLUMNS] = df[TEXT_COLUMNS].astype(object)
+
     return df
 
 def save_data_to_parquet(df: pd.DataFrame, path: str) -> None:
@@ -172,18 +185,23 @@ def save_data_to_parquet(df: pd.DataFrame, path: str) -> None:
         df: DataFrame to save.
         path: File path for the parquet file.
     """
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    # Ensure directory exists when a directory component is provided.
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
     df.to_parquet(path, index=False)
 
-def load_data_from_parquet(path: str) -> pd.DataFrame:
+def load_data_from_parquet(path: str = 'data/cache/synthetic_employee_data.parquet') -> pd.DataFrame:
     """
     Load DataFrame from parquet file.
 
     Args:
-        path: File path for the parquet file.
+        path: File path for the parquet file. Defaults to 'data/cache/synthetic_employee_data.parquet'.
 
     Returns:
         Loaded DataFrame.
     """
-    return pd.read_parquet(path)
+    df = pd.read_parquet(path)
+    existing_text_columns = [col for col in TEXT_COLUMNS if col in df.columns]
+    df[existing_text_columns] = df[existing_text_columns].astype(object)
+    return df

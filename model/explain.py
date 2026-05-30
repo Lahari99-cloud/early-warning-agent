@@ -5,11 +5,48 @@ Model explanation using SHAP for attrition prediction.
 import shap
 import pandas as pd
 from typing import Tuple, Dict, Any
-import os
-import joblib
+import logging
+
+from data.generate import load_data_from_parquet
+from model.features import (
+    get_model_feature_names,
+    load_category_vocabularies,
+    load_feature_columns,
+    prepare_features,
+)
 
 
-def explain_prediction(model, X: pd.DataFrame) -> Tuple[Dict[str, Any], pd.DataFrame]:
+logger = logging.getLogger(__name__)
+_EXPLAINER_CACHE = {}
+
+
+def get_background_data(
+    category_vocabularies: dict,
+    training_columns: list[str] | None,
+) -> pd.DataFrame:
+    """Load a representative encoded background sample for SHAP baselines."""
+    background_raw = load_data_from_parquet()
+    background_encoded, _ = prepare_features(
+        background_raw,
+        label_encoders=category_vocabularies,
+        training_columns=training_columns,
+    )
+    return background_encoded.head(100)
+
+
+def get_explainer(model, background: pd.DataFrame):
+    """Cache SHAP explainers by model object to avoid rebuilding in Streamlit."""
+    cache_key = (id(model), tuple(background.columns))
+    if cache_key not in _EXPLAINER_CACHE:
+        _EXPLAINER_CACHE[cache_key] = shap.TreeExplainer(
+            model,
+            data=background,
+            feature_perturbation="interventional",
+        )
+    return _EXPLAINER_CACHE[cache_key]
+
+
+def explain_prediction(model, X: pd.DataFrame) -> Tuple[Dict[str, Any], pd.DataFrame, pd.DataFrame]:
     """
     Generate SHAP explanations for model predictions.
 
@@ -20,50 +57,54 @@ def explain_prediction(model, X: pd.DataFrame) -> Tuple[Dict[str, Any], pd.DataF
                  The function will encode categorical columns to match the model's training data.
 
     Returns:
-        Tuple of (explanation_dict, shap_values_df):
+        Tuple of (explanation_dict, shap_values_df, X_encoded):
         - explanation_dict: Dictionary containing expected value and feature contributions.
         - shap_values_df: DataFrame of SHAP values per feature per sample.
+        - X_encoded: DataFrame with encoded categorical columns (used for model prediction).
     """
-    # Load label encoders if they exist
-    encoders_path = 'model/label_encoders.pkl'
-    if os.path.exists(encoders_path):
-        label_encoders = joblib.load(encoders_path)
-    else:
-        label_encoders = {}
-
-    # Make a copy to avoid modifying the original
-    X_encoded = X.copy()
-
-    # Encode categorical columns if we have encoders for them
-    categorical_cols = ['department', 'job_title', 'level']
-    for col in categorical_cols:
-        if col in label_encoders and col in X_encoded.columns:
-            # Transform using the saved label encoder
-            # Handle unseen labels by mapping to -1 or a default? We'll use the encoder's transform
-            # and if there's an unseen label, we'll catch the error and map to -1.
-            try:
-                X_encoded[col] = label_encoders[col].transform(X_encoded[col].astype(str))
-            except ValueError:
-                # If there are unseen labels, map them to -1
-                # We'll create a mapping from known classes to integers, and then map unknowns to -1
-                known_mapping = {cls: i for i, cls in enumerate(label_encoders[col].classes_)}
-                X_encoded[col] = X_encoded[col].apply(lambda x: known_mapping.get(x, -1))
+    category_vocabularies = load_category_vocabularies()
+    training_columns = load_feature_columns() or get_model_feature_names(model)
+    X_encoded, _ = prepare_features(
+        X,
+        label_encoders=category_vocabularies,
+        training_columns=training_columns,
+    )
 
     # Create SHAP explainer for tree-based models (XGBoost)
-    explainer = shap.TreeExplainer(model)
+    background = get_background_data(category_vocabularies, training_columns)
+    explainer = get_explainer(model, background)
 
     # Calculate SHAP values
-    shap_values = explainer.shap_values(X_encoded)
+    try:
+        shap_values = explainer.shap_values(X_encoded)
+    except Exception:
+        logger.exception("SHAP explanation failed")
+        raise
 
     # For binary classification, shap_values is a list of two arrays [class_0, class_1]
     # We want the SHAP values for the positive class (attrition risk)
     if isinstance(shap_values, list):
         shap_values = shap_values[1]  # Positive class
 
+    # Import numpy for array handling
+    import numpy as np
+
+    # Convert to numpy array for consistent handling
+    shap_values = np.array(shap_values)
+
+    # Binary classifier with class dimension
+    if shap_values.ndim == 3:
+        # shape: (samples, features, classes)
+        shap_values = shap_values[:, :, 1]
+
+    # Single sample edge case
+    if shap_values.ndim == 1:
+        shap_values = shap_values.reshape(1, -1)
+
     # Create DataFrame with SHAP values (using original column names for clarity)
     shap_values_df = pd.DataFrame(
         shap_values,
-        columns=X.columns,  # Use original column names
+        columns=X_encoded.columns,
         index=X.index
     )
 
@@ -75,8 +116,8 @@ def explain_prediction(model, X: pd.DataFrame) -> Tuple[Dict[str, Any], pd.DataF
     # Create explanation dictionary
     explanation_dict = {
         'expected_value': expected_value,
-        'feature_names': list(X.columns),  # Original feature names
+        'feature_names': list(X_encoded.columns),
         'shap_values': shap_values  # This is the array for the positive class
     }
 
-    return explanation_dict, shap_values_df
+    return explanation_dict, shap_values_df, X_encoded

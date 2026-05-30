@@ -1,0 +1,21 @@
+{
+  "categorical_columns": [
+    "department",
+    "job_title",
+    "level"
+  ],
+  "feature_columns": [
+    "department",
+    "job_title",
+    "salary",
+    "engagement_score",
+    "years_at_company",
+    "level",
+    "comp_vs_band_pct",
+    "months_since_promo",
+    "perf_trend",
+    "pto_usage",
+    "one_on_one_freq",
+    "internal_moves"
+  ]
+}

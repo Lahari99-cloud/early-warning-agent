@@ -9,11 +9,27 @@ import pandas as pd
 import numpy as np
 import os
 import sys
+import json
+import logging
+import tempfile
 from pathlib import Path
 
 # Add the project root to the path so we can import config
 sys.path.append(str(Path(__file__).parent.parent))
-from config import SEED
+from config import FEATURE_SCHEMA_VERSION, MODEL_VERSION, SEED
+from model.artifacts import (
+    LEGACY_METADATA_PATH,
+    LEGACY_MODEL_PATH,
+    active_version_path,
+    artifact_path,
+    atomic_write_text,
+    atomic_write_json,
+    read_active_version,
+)
+
+
+METADATA_PATH = str(artifact_path("metadata.json"))
+logger = logging.getLogger(__name__)
 
 
 def train_model(X: pd.DataFrame, y: pd.Series) -> xgb.XGBClassifier:
@@ -40,7 +56,9 @@ def train_model(X: pd.DataFrame, y: pd.Series) -> xgb.XGBClassifier:
         subsample=0.8,
         colsample_bytree=0.8,
         random_state=SEED,
-        eval_metric='logloss'
+        seed=SEED,
+        eval_metric='logloss',
+        n_jobs=1,
     )
 
     # Train the model
@@ -89,7 +107,7 @@ def evaluate_model(model: xgb.XGBClassifier, X: pd.DataFrame, y: pd.Series) -> d
     }
 
 
-def save_model(model: xgb.XGBClassifier, path: str = "model/xgboost_model.json") -> None:
+def save_model(model: xgb.XGBClassifier, path: str = str(artifact_path("model.json"))) -> None:
     """
     Save the trained model to disk.
 
@@ -97,12 +115,83 @@ def save_model(model: xgb.XGBClassifier, path: str = "model/xgboost_model.json")
         model: Trained XGBoost classifier.
         path: File path to save the model.
     """
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    model.save_model(path)
+    directory = os.path.dirname(path)
+    if directory:
+        os.makedirs(directory, exist_ok=True)
+
+    target = Path(path)
+    if target.exists():
+        with target.open("r+b"):
+            pass
+    else:
+        with target.open("xb"):
+            pass
+        target.unlink()
+
+    with tempfile.NamedTemporaryFile(
+        suffix=target.suffix,
+        dir=target.parent or Path("."),
+        delete=False,
+    ) as tmp:
+        tmp_path = Path(tmp.name)
+
+    try:
+        model.save_model(str(tmp_path))
+        tmp_path.replace(target)
+    except Exception:
+        if tmp_path.exists():
+            tmp_path.unlink()
+        raise
 
 
-def load_model(path: str = "model/xgboost_model.json") -> xgb.XGBClassifier:
+def save_artifact_metadata(
+    feature_columns: list[str],
+    path: str = METADATA_PATH,
+) -> None:
+    """Persist compatibility metadata for trained artifacts."""
+    metadata = {
+        "model_version": MODEL_VERSION,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+        "feature_columns": feature_columns,
+        "pandas_version": pd.__version__,
+        "xgboost_version": xgb.__version__,
+    }
+    atomic_write_json(path, metadata)
+    atomic_write_text(active_version_path(), MODEL_VERSION)
+
+
+def load_artifact_metadata(path: str = METADATA_PATH) -> dict:
+    """Load artifact metadata and validate known compatibility versions."""
+    active_path = artifact_path("metadata.json", read_active_version())
+    path_to_load = Path(path)
+    if active_path.exists():
+        path_to_load = active_path
+    elif Path(LEGACY_METADATA_PATH).exists():
+        path_to_load = Path(LEGACY_METADATA_PATH)
+
+    if not path_to_load.exists():
+        logger.warning("Artifact metadata missing; treating model as legacy.")
+        return {}
+
+    with path_to_load.open(encoding="utf-8") as f:
+        metadata = json.load(f)
+
+    expected = {
+        "model_version": MODEL_VERSION,
+        "feature_schema_version": FEATURE_SCHEMA_VERSION,
+    }
+    mismatches = {
+        key: {"expected": expected[key], "actual": metadata.get(key)}
+        for key in expected
+        if metadata.get(key) != expected[key]
+    }
+    if mismatches:
+        raise ValueError(f"Artifact metadata version mismatch: {mismatches}")
+
+    return metadata
+
+
+def load_model(path: str | None = None) -> xgb.XGBClassifier:
     """
     Load a trained model from disk.
 
@@ -112,8 +201,14 @@ def load_model(path: str = "model/xgboost_model.json") -> xgb.XGBClassifier:
     Returns:
         Trained XGBoost classifier.
     """
+    if path is None:
+        active_model_path = artifact_path("model.json", read_active_version())
+        path = str(active_model_path if active_model_path.exists() else Path(LEGACY_MODEL_PATH))
+
     if not os.path.exists(path):
         raise FileNotFoundError(f"Model file not found at {path}")
+    load_artifact_metadata()
     model = xgb.XGBClassifier()
     model.load_model(path)
+    logger.info("Loaded model artifact from %s", path)
     return model

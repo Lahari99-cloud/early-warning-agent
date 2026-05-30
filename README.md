@@ -1,10 +1,8 @@
 # Attrition Early-Warning Agent
 
-**Honest framing:** This is a demo using synthetic HR data only. No real employee data is used or could be used with this code.
+**Honest framing:** This is a demo using synthetic HR data only. No real employee data is used or supported by this code.
 
-Demo for a Data Scientist (People) application. Predicts 90-day regretted-attrition
-risk per employee, explains the drivers, and an LLM agent drafts a manager 1:1 prep
-note. Human reviews, never auto-sends. Synthetic data, production-shaped architecture.
+The application estimates 90-day regretted-attrition probability, explains model drivers, and drafts manager 1:1 prep notes. Every note is a draft for human review and is never auto-sent.
 
 ## How It Works
 
@@ -16,66 +14,98 @@ flowchart TD
     C --> E[Model Trainer]
     E --> F[Trained XGBoost Model]
     F --> G[SHAP Explainer]
-    D --> H[Risk Score Calculation]
+    D --> H[Model Score Calculation]
     H --> I[Employee Ranking]
     I --> J[Team Roster View]
     I --> K[New Flags Digest]
     J --> L[Employee Detail View]
     K --> L
     L --> M[SHAP Drivers]
-    L --> N[LLM Agent]
+    L --> N[Local Ollama Agent]
     N --> O[Draft Prep Note]
     O --> P[Guardrails Validation]
     P --> Q[Final Draft Output]
-    style A fill:#f9f,stroke:#333
-    style Q fill:#9f9,stroke:#333
 ```
 
 ## Stack
 
 - Python 3.11
-- xgboost
-- shap
+- XGBoost
+- SHAP
 - pandas
-- faker (synthetic data)
-- anthropic (agent)
-- streamlit (UI)
+- Faker synthetic data
+- Ollama local model API
+- Streamlit
+- FastAPI
 - pytest
 
-Deploy target: Replit.
+## Review Bands
 
-## Principles
+The dashboard groups model scores into triage bands:
 
-- Synthetic data only. No real HR data anywhere.
-- Every prediction must be explainable (SHAP drivers attached).
-- Agent output is a DRAFT for human review. Never an action.
-- Small, tested, committed increments. One concern per module.
-- Determinism where possible: seed everything (np, random, faker).
+- Low: `< 0.40`
+- Medium: `0.40-0.69`
+- High: `>= 0.70`
+
+These are model-review labels, not performance ratings or employment decisions.
 
 ## Structure
 
-```
+```text
 data/        synthetic generator + cached parquet
 model/       train, evaluate, explain, persisted artifacts
-agent/       prompt builder + LLM call + guardrails
-app/         streamlit dashboard
-tests/       pytest, one file per module
+agent/       prompt builder + local LLM call + guardrails
+app/         Streamlit dashboard
+api/         FastAPI inference service
+tests/       pytest suite
 ```
-
-## Done
-
-= code + passing test + committed.
 
 ## Setup
 
-1. Install dependencies: `pip install -r requirements.txt`
-2. Run tests: `pytest`
-3. Launch dashboard: `streamlit run app/dashboard.py`
+1. Create and activate a Python 3.11 virtual environment.
+2. Install dependencies:
+   ```powershell
+   python -m pip install -r requirements.txt
+   ```
+3. Install Ollama from `https://ollama.ai`.
+4. Start Ollama:
+   ```powershell
+   ollama serve
+   ```
+5. Pull the default model:
+   ```powershell
+   ollama pull llama3.2:3b
+   ```
+6. Run tests:
+   ```powershell
+   python -m pytest
+   ```
+7. Launch the dashboard:
+   ```powershell
+   python -m streamlit run app/dashboard.py
+   ```
+8. Launch the API:
+   ```powershell
+   python -m uvicorn api.main:app --host 127.0.0.1 --port 8000
+   ```
 
-## Loom Script (5-bullet walkthrough)
+Optional Ollama settings are documented in `.env.example`.
 
-- Open the dashboard to see the team roster sorted by attrition risk score with visual risk bands (🔴 High, 🟠 Medium, 🟢 Low)
-- Switch to the "This week's new flags" tab to see employees above the risk threshold (default 70%)
-- Click on any employee to view their detailed risk score, SHAP drivers showing top risk factors, and a LLM-generated 1:1 prep note draft
-- Observe how the prep note follows guidelines: labeled as DRAFT, focuses on development opportunities, and avoids direct attrition risk mentions
-- Adjust the risk threshold slider in the sidebar to dynamically filter the new flags digest
+## API
+
+- `GET /health`
+- `GET /metadata`
+- `GET /versions`
+- `GET /schema`
+- `POST /predict`
+- `POST /explain`
+
+OpenAPI docs are available at `http://127.0.0.1:8000/docs` when the API is running.
+
+## Demo Walkthrough
+
+- Open the roster sorted by model score with Low, Medium, and High review bands.
+- Switch to "This week's new flags" to view employees above the review threshold.
+- Select an employee to view their model score, SHAP drivers, and manager 1:1 prep note draft.
+- Confirm that notes are labeled as drafts and framed as conversation prompts for human review.
+- Adjust the review threshold slider to filter the flags digest.

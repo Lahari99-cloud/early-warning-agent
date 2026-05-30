@@ -6,7 +6,7 @@ risk per employee, explains the drivers, and an LLM agent drafts a manager 1:1 p
 note. Human reviews, never auto-sends. Synthetic data, production-shaped architecture.
 
 ## Stack
-Python 3.11, xgboost, shap, pandas, faker (synthetic data), anthropic (agent),
+Python 3.11, xgboost, shap, pandas, faker (synthetic data), Ollama (agent),
 streamlit (UI), pytest. Deploy target: Replit.
 
 ## Principles

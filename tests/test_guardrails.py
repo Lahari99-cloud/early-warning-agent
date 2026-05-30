@@ -76,6 +76,25 @@ def test_validate_prep_note_too_short():
     assert validate_prep_note(short_note) == False
 
 
+def test_validate_prep_note_allows_concise_complete_note():
+    concise_note = """
+    DRAFT - FOR HUMAN REVIEW ONLY
+
+    LIKELY ISSUE:
+    Model drivers suggest a focused manager check-in would be useful.
+
+    TALKING POINTS:
+    1. Discuss workload balance and support needs.
+    2. Review recent performance momentum.
+    3. Confirm check-in cadence.
+
+    SUGGESTED ACTION:
+    Schedule a manager-reviewed 1:1 this week.
+    """
+
+    assert validate_prep_note(concise_note) is True
+
+
 def test_validate_prep_note_action_language():
     """Test validation fails with action-oriented language."""
     action_note = """
@@ -166,14 +185,15 @@ def test_sanitize_output_add_missing_sections():
 
 
 def test_sanitize_output_length_limiting():
-    """Test sanitization limits excessive length."""
+    """Test sanitization preserves complete structured notes."""
     long_note = "DRAFT - FOR HUMAN REVIEW ONLY\n\n"
     long_note += "LIKELY ISSUE: " + "A" * 600 + "\n\n"
     long_note += "TALKING POINTS:\n1. Point\n2. Point\n3. Point\n\n"
     long_note += "SUGGESTED ACTION: Action."
 
     sanitized = sanitize_output(long_note)
-    assert len(sanitized) <= 520  # Allow some buffer over 500 for formatting
+    assert "3. Point" in sanitized
+    assert "SUGGESTED ACTION:" in sanitized
 
 
 def test_sanitize_output_empty_input():
@@ -185,12 +205,36 @@ def test_sanitize_output_empty_input():
     assert "SUGGESTED ACTION:" in sanitize_output("")
 
 
+def test_sanitize_output_rewrites_technical_difficulty_text():
+    raw_note = """
+    DRAFT - FOR HUMAN REVIEW ONLY
+
+    LIKELY ISSUE:
+    Unable to generate detailed note due to technical difficulties.
+
+    TALKING POINTS:
+    1. Review model score.
+    2. Review top drivers.
+    3. Discuss support needs.
+
+    SUGGESTED ACTION:
+    Schedule a manager-reviewed 1:1.
+    """
+
+    sanitized = sanitize_output(raw_note)
+
+    assert "technical difficulties" not in sanitized.lower()
+    assert "Assessment note unavailable" in sanitized
+    assert "TALKING POINTS:" in sanitized
+    assert "SUGGESTED ACTION:" in sanitized
+
+
 def test_sanitize_output_profanity_replacement():
     """Test sanitization replaces profanity with asterisks."""
     profane_note = """
     DRAFT - FOR HUMAN REVIEW ONLY
 
-    LIKELY ISSUE: This damnsituation is hellish.
+    LIKELY ISSUE: This damn situation is hell.
 
     TALKING POINTS:
     1. Discuss current project satisfaction
@@ -203,3 +247,25 @@ def test_sanitize_output_profanity_replacement():
     sanitized = sanitize_output(profane_note)
     assert "****" in sanitized  # damn -> ****
     assert "////" in sanitized  # hell -> ////
+
+
+def test_validate_allows_model_driver_language():
+    note = """
+    DRAFT - FOR HUMAN REVIEW ONLY
+
+    LIKELY ISSUE:
+    Lindsay Hurst's largest review drivers are Pto Usage (+0.85), Perf Trend (+0.82), One On One Freq (+0.64). Use these as conversation prompts to understand workload, support needs, and engagement.
+
+    TALKING POINTS:
+    1. Discuss workload balance, recovery time, and whether PTO patterns signal burnout or scheduling friction.
+    2. Review recent performance changes and ask what support would help stabilize momentum.
+    3. Ask whether the current 1:1 cadence gives enough coaching, context, and unblock time.
+
+    SUGGESTED ACTION:
+    Schedule a 1:1 with Lindsay Hurst this week. Review workload coverage and encourage a sustainable PTO plan.
+    """
+
+    assert validate_prep_note(note) is True
+    assert "largest review drivers" in sanitize_output(note)
+    assert "largestframework" not in sanitize_output(note)
+    assert "3. Ask whether" in sanitize_output(note)

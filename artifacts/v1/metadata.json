@@ -1,0 +1,20 @@
+{
+  "feature_columns": [
+    "department",
+    "job_title",
+    "salary",
+    "engagement_score",
+    "years_at_company",
+    "level",
+    "comp_vs_band_pct",
+    "months_since_promo",
+    "perf_trend",
+    "pto_usage",
+    "one_on_one_freq",
+    "internal_moves"
+  ],
+  "feature_schema_version": "v1",
+  "model_version": "v1",
+  "pandas_version": "2.2.3",
+  "xgboost_version": "2.1.4"
+}

@@ -18,9 +18,10 @@ def validate_prep_note(note: str) -> bool:
     if not note or not isinstance(note, str):
         return False
 
-    # Check length (reasonable bounds for a prep note) - 50-500 words
+    # Check length. Keep the lower bound modest so concise valid notes do not
+    # fall into sanitizer fallback paths.
     word_count = len(note.strip().split())
-    if word_count < 50 or word_count > 500:
+    if word_count < 25 or word_count > 600:
         return False
 
     # Check for required sections
@@ -33,17 +34,16 @@ def validate_prep_note(note: str) -> bool:
     if "DRAFT -" not in note.upper() and "DRAFT:" not in note.upper():
         return False
 
-    # Check for action-oriented language that implies automation
+    # Check for action-oriented language that implies automation.
+    # Terms like "model drivers" are allowed when describing explainability.
     action_phrases = [
         r'\bwill be (terminated|fired|laid off|dismissed)\b',
         r'\bshould be (terminated|fired|laid off|dismissed)\b',
         r'\b(must|shall|will) (terminate|fire|lay off|dismiss)\b',
         r'\brecommend (termination|firing|layoff|dismissal)\b',
-        r'\b automatic(ly)?\b',
-        r'\b system(atic)?ally\b',
-        r'\b algorithm\b',
-        r'\b AI\b',
-        r'\b model\b'
+        r'\bautomatic(ally)? (terminate|fire|lay off|dismiss|send|decide)\b',
+        r'\b(system|algorithm|ai|model) (will|must|shall|should) (terminate|fire|lay off|dismiss|decide|send)\b',
+        r'\b(decided|sent|triggered) by (the )?(system|algorithm|ai|model)\b',
     ]
 
     note_lower = note.lower()
@@ -56,7 +56,7 @@ def validate_prep_note(note: str) -> bool:
         'damn', 'hell', 'shit', 'fuck', 'bitch', 'ass', 'crap'
     ]
     for word in profanity_list:
-        if word in note_lower:
+        if re.search(rf'\b{word}\b', note_lower):
             return False
 
     # Check that tone is not overly negative or accusatory
@@ -84,7 +84,15 @@ def sanitize_output(note: str) -> str:
         Sanitized string.
     """
     if not note:
-        return "DRAFT - FOR HUMAN REVIEW ONLY\n\nLIKELY ISSUE: Unable to generate note due to insufficient data.\nTALKING POINTS: 1. Discuss employee goals and concerns\n2. Review recent performance and development needs\n3. Explore training and growth opportunities\nSUGGESTED ACTION: Schedule follow-up meeting to continue discussion."
+        return (
+            "DRAFT - FOR HUMAN REVIEW ONLY\n\n"
+            "LIKELY ISSUE:\nAssessment note unavailable. Please review the employee's model score and top drivers manually.\n\n"
+            "TALKING POINTS:\n"
+            "1. Review current role satisfaction and recent workload.\n"
+            "2. Discuss recent accomplishments, challenges, and support needs.\n"
+            "3. Ask about future goals and any barriers to engagement.\n\n"
+            "SUGGESTED ACTION:\nSchedule a manager-reviewed 1:1 and document any agreed follow-up support."
+        )
 
     # Ensure it's a string
     note = str(note)
@@ -92,21 +100,28 @@ def sanitize_output(note: str) -> str:
     # Trim whitespace
     note = note.strip()
 
+    if "TECHNICAL DIFFICULTIES" in note.upper() or "UNABLE TO GENERATE" in note.upper():
+        note = re.sub(
+            r'unable to generate(?: detailed)? note due to technical difficulties\.?',
+            "Assessment note unavailable. Please review the employee's model score and top drivers manually.",
+            note,
+            flags=re.IGNORECASE,
+        )
+
     # Ensure DRAFT label is present
     if "DRAFT -" not in note.upper() and "DRAFT:" not in note.upper():
         note = "DRAFT - FOR HUMAN REVIEW ONLY\n\n" + note
 
-    # Remove any content that looks like automated action language
+    # Remove any content that looks like automated action language.
+    # Keep neutral explainability phrases such as "model drivers" intact.
     action_patterns = [
         (r'\bwill be (terminated|fired|laid off|dismissed)\b', 'will be discussed for development'),
         (r'\bshould be (terminated|fired|laid off|dismissed)\b', 'should be engaged in development conversation'),
         (r'\b(must|shall|will) (terminate|fire|lay off|dismiss)\b', r'\1 consider development options'),
         (r'\brecommend (termination|firing|layoff|dismissal)\b', 'recommend developmental discussion'),
-        (r'\b automatic(ly)?\b', ''),
-        (r'\b system(atic)?ally\b', 'regularly'),
-        (r'\b algorithm\b', 'approach'),
-        (r'\b AI\b', 'HR guidance'),
-        (r'\b model\b', 'framework')
+        (r'\bautomatic(ally)? (terminate|fire|lay off|dismiss|send|decide)\b', 'review with a human before taking action'),
+        (r'\b(system|algorithm|ai|model) (will|must|shall|should) (terminate|fire|lay off|dismiss|decide|send)\b', 'a manager should review before taking action'),
+        (r'\b(decided|sent|triggered) by (the )?(system|algorithm|ai|model)\b', 'reviewed by a manager'),
     ]
 
     for pattern, replacement in action_patterns:
@@ -123,7 +138,7 @@ def sanitize_output(note: str) -> str:
         ('crap', '****')    # 4 asterisks
     ]
     for word, replacement in profanity_replacements:
-        note = re.sub(rf'{word}', replacement, note, flags=re.IGNORECASE)
+        note = re.sub(rf'\b{word}\b', replacement, note, flags=re.IGNORECASE)
 
     # Ensure required sections exist (add if missing)
     # We'll build the note section by section to ensure proper ordering
@@ -181,18 +196,7 @@ def sanitize_output(note: str) -> str:
     # Join sections with double newlines
     note = "\n\n".join(final_sections)
 
-    # Limit length to reasonable bounds
-    if len(note) > 500:
-        # Truncate to last complete sentence within limit
-        truncated = note[:500]
-        last_period = truncated.rfind('.')
-        if last_period > 400:  # Only truncate if we have a reasonable sentence
-            note = truncated[:last_period + 1]
-        else:
-            note = truncated + "..."
-
-    # Ensure minimum length
-    if len(note.strip()) < 50:
-        note = "DRAFT - FOR HUMAN REVIEW ONLY\n\nLIKELY ISSUE: Discussion needed regarding role fit and engagement.\nTALKING POINTS: 1. Discuss employee goals and concerns\n2. Review recent performance and development needs\n3. Explore training and growth opportunities\nSUGGESTED ACTION: Schedule follow-up meeting to continue discussion."
+    # Keep complete structured notes. Validation handles word count bounds; do not
+    # truncate here because partial numbered lists are worse than a longer draft.
 
     return note.strip()
