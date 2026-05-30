@@ -4,6 +4,10 @@
 
 The application estimates 90-day regretted-attrition probability, explains model drivers, and drafts manager 1:1 prep notes. Every note is a draft for human review and is never auto-sent.
 
+## Demo
+
+![Attrition Early-Warning Agent dashboard demo](assets/early-warning-agent-demo.gif)
+
 ## How It Works
 
 ```mermaid
