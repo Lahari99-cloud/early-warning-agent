@@ -106,10 +106,3 @@ Optional Ollama settings are documented in `.env.example`.
 
 OpenAPI docs are available at `http://127.0.0.1:8000/docs` when the API is running.
 
-## Demo Walkthrough
-
-- Open the roster sorted by model score with Low, Medium, and High review bands.
-- Switch to "This week's new flags" to view employees above the review threshold.
-- Select an employee to view their model score, SHAP drivers, and manager 1:1 prep note draft.
-- Confirm that notes are labeled as drafts and framed as conversation prompts for human review.
-- Adjust the review threshold slider to filter the flags digest.
