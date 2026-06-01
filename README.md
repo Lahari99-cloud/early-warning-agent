@@ -1,6 +1,6 @@
 # Attrition Early-Warning Agent
 
-**Honest framing:** This is a demo using synthetic HR data only. No real employee data is used or supported by this code.
+This is a demo using synthetic HR data only. No real employee data is used or supported by this code.
 
 The application estimates 90-day regretted-attrition probability, explains model drivers, and drafts manager 1:1 prep notes. Every note is a draft for human review and is never auto-sent.
 
